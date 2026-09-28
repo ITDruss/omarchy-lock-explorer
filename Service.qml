@@ -3949,7 +3949,8 @@ echo "$out"
   // by then. The explorer is layer-shell, so none does, and the OSD would
   // otherwise stay up until the launcher's 15s timeout. The explorer's own
   // close on open runs before the OSD exists, so watch for it for a few
-  // seconds after `explore` and close it once it shows.
+  // seconds after `explore` and close it 2s after it shows, long enough to
+  // read.
   function watchLaunchOsd() {
     launchOsdWatch.ticks = 0
     launchOsdWatch.restart()
@@ -3974,8 +3975,14 @@ echo "$out"
     onExited: function(code) {
       if (String(launchOsdStateOut.text || "").trim() !== "open") return
       launchOsdWatch.stop()
-      Quickshell.execDetached(["omarchy-shell", "osd", "close"])
+      launchOsdClose.restart()
     }
+  }
+
+  Timer {
+    id: launchOsdClose
+    interval: 2000
+    onTriggered: Quickshell.execDetached(["omarchy-shell", "osd", "close"])
   }
 
   IpcHandler {
