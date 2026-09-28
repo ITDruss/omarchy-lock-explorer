@@ -155,7 +155,7 @@ Item {
                   packages: [], fix: "copies" })
     var rivals = service && service.rivalLockPlugins ? service.rivalLockPlugins : []
     if (rivals.length > 0)
-      list.push({ text: root.tr("Another lock screen plugin is enabled too: %1. Only one of them gets `omarchy-shell lock`. Keep one: omarchy plugin disable %2 && omarchy restart shell").arg(rivals.join(", ")).arg(rivals[0]),
+      list.push({ text: root.tr("Another lock screen plugin is enabled too: %1. Only one of them gets omarchy-shell lock. Keep one: omarchy plugin disable %2 && omarchy restart shell").arg(rivals.join(", ")).arg(rivals[0]),
                   packages: [] })
     return list
   }
