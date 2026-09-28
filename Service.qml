@@ -2353,6 +2353,9 @@ echo "$out"
   // many in a row is the key at its own limit: hand over the password.
   readonly property int fido2TouchRetryLimit: 3
   property int fido2TouchMisses: 0
+  // A failed round with no PIN in it waits here while the probe says whether
+  // the key is still attached; see handleFido2Finished.
+  property bool fido2FailurePending: false
   readonly property bool fido2Exhausted: fido2PinAttempts >= fido2PinAttemptLimit
   readonly property bool fido2Active: authMode === "fido2"
   property bool previewVisible: false
@@ -2580,6 +2583,7 @@ echo "$out"
     failureMessage = ""
     failedAttempts = 0
     failureTimes = []
+    fido2FailurePending = false
     authenticatingPassword = false
     fingerprintAuthenticating = false
     fingerprintRetryTimer.stop()
@@ -3014,6 +3018,37 @@ echo "$out"
       return
     }
 
+    // A key pulled out mid-round fails it at once, and so does every retry
+    // after it: counted as misses, three of those arrive within a second and
+    // a half, park the lock on the password, stop the hotplug watcher, and
+    // report three failed attempts when nobody tried anything. A round with
+    // no PIN in it asks the probe first; see fido2FailureChecked.
+    if (!fido2PinSubmitted) {
+      fido2FailurePending = true
+      refreshFido2Status()
+      return
+    }
+    countFido2Failure()
+  }
+
+  // The probe answered for a round that failed without a PIN. Gone: say so,
+  // stay on the key, and let the hotplug watcher (which runs while the key is
+  // absent in key mode) start the next round when it is back. Still there:
+  // it was a real miss.
+  function fido2FailureChecked() {
+    fido2FailurePending = false
+    if (!lockRequested) return
+    if (!fido2TokenPresent) {
+      fido2Status = t("No security key found")
+      failureMessage = ""
+      logEvent("fido2-round ended, key removed")
+      runWake()
+      return
+    }
+    countFido2Failure()
+  }
+
+  function countFido2Failure() {
     // A PIN that went to the key is still the user's to spend again.
     var pinWasSubmitted = fido2PinSubmitted
     failedAttempts += 1
@@ -3553,6 +3588,11 @@ echo "$out"
       var answer = String(fido2CheckStdout.text || "").trim().split(/\s+/)
       root.fido2Installed = answer[0] === "yes"
       root.fido2TokenPresent = answer[1] === "present"
+
+      if (root.fido2FailurePending) {
+        root.fido2FailureChecked()
+        return
+      }
 
       if (!root.fido2Configured) {
         if (root.fido2Active) root.setAuthMode("password")
