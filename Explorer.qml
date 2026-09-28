@@ -153,6 +153,10 @@ Item {
     if (dirs.length > 0)
       list.push({ text: root.tr("Another copy of this plugin may load instead of this one: %1. Move it out of ~/.config/omarchy/plugins/ (to ~/.local/share/omarchy/lock-explorer-backups) and restart the shell.").arg(dirs.join(", ")),
                   packages: [], fix: "copies" })
+    var rivals = service && service.rivalLockPlugins ? service.rivalLockPlugins : []
+    if (rivals.length > 0)
+      list.push({ text: root.tr("Another lock screen plugin is enabled too: %1. Only one of them gets `omarchy-shell lock`. Keep one: omarchy plugin disable %2 && omarchy restart shell").arg(rivals.join(", ")).arg(rivals[0]),
+                  packages: [] })
     return list
   }
 

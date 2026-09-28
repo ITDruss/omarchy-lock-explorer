@@ -973,6 +973,45 @@ Item {
     }
   }
 
+  // Another enabled plugin that also replaces omarchy.lock registers the same
+  // `lock` IPC target. Whichever loads first keeps it, so `omarchy-shell lock
+  // explore` answers "Function not found" and nothing in the shell says why
+  // (issue #41). Ask the shell which plugins are on and name the other one.
+  property var rivalLockPlugins: []
+  property bool rivalLockNotified: false
+
+  Timer {
+    id: rivalLockCheckTimer
+    // After the shell has settled; right after a reload it may still list the
+    // stock lock being swapped out.
+    interval: 5000
+    onTriggered: if (!rivalLockProc.running) rivalLockProc.running = true
+  }
+
+  Process {
+    id: rivalLockProc
+    command: ["omarchy-shell", "shell", "listPlugins"]
+    stdout: StdioCollector { id: rivalLockStdout; waitForEnd: true }
+    onExited: {
+      var plugins = []
+      try { plugins = JSON.parse(String(rivalLockStdout.text || "[]")) } catch (e) { return }
+      if (!Array.isArray(plugins)) return
+      var found = plugins.filter(function(p) {
+        return p && p.enabled === true && String(p.clonedFrom || "") === "omarchy.lock"
+          && String(p.id || "") !== root.pluginId
+      }).map(function(p) { return String(p.id) })
+      root.rivalLockPlugins = found
+      if (found.length === 0) return
+      root.logEvent("rival-lock " + found.join(" "))
+      console.warn("lock-explorer: another lock screen plugin is enabled and may own the `lock` IPC target: "
+        + found.join(", ") + ". Keep one: omarchy plugin disable " + found[0] + " && omarchy restart shell")
+      if (root.rivalLockNotified) return
+      root.rivalLockNotified = true
+      Quickshell.execDetached(["notify-send", "-a", "Lock Screen Explorer", found.join(", ") + " is also enabled",
+        "Two lock screen plugins are on. Keep one:\nomarchy plugin disable " + found[0] + "\nomarchy restart shell"])
+    }
+  }
+
   // What the explorer's Settings offers when something is missing. Both run
   // in a terminal the user can see: pacman asks for the password there, and
   // the doctor's report stays on screen until a key is pressed. Only the
@@ -3784,6 +3823,7 @@ echo "$out"
       readonly property bool allowPasswordToggle: root.allowPasswordToggle
       readonly property bool showAuthIcons: root.showAuthIcons
       readonly property var shadowingDirs: root.shadowingDirs
+      readonly property var rivalLockPlugins: root.rivalLockPlugins
       readonly property string doctorPath: root.doctorPath
       readonly property string wallpaperBlur: root.wallpaperBlur
       readonly property string wallpaperDim: root.wallpaperDim
@@ -3938,6 +3978,7 @@ echo "$out"
     detectAvatar()
     blankCrashCheckProc.running = true
     duplicatePluginProc.running = true
+    rivalLockCheckTimer.start()
     checkStrandedLock()
     settingsRestoreTimer.start()
   }
@@ -3994,6 +4035,7 @@ echo "$out"
         capsLock: root.capsLock,
         fingerprintStatus: root.fingerprintStatus,
         shadowedBy: root.shadowingDirs,
+        rivalLockPlugins: root.rivalLockPlugins,
         wakeGraceMs: root.wakeInputGrace,
         faceStart: root.faceStart,
         powerActions: root.powerActions,
