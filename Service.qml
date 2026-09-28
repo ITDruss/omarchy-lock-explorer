@@ -3944,6 +3944,40 @@ echo "$out"
 
   Component.onDestruction: retireExplorerApi()
 
+  // Opened from the app launcher, the shell's app library shows a
+  // "Launching …" OSD 2s after the launch unless a new toplevel window appears
+  // by then. The explorer is layer-shell, so none does, and the OSD would
+  // otherwise stay up until the launcher's 15s timeout. The explorer's own
+  // close on open runs before the OSD exists, so watch for it for a few
+  // seconds after `explore` and close it once it shows.
+  function watchLaunchOsd() {
+    launchOsdWatch.ticks = 0
+    launchOsdWatch.restart()
+  }
+
+  Timer {
+    id: launchOsdWatch
+    property int ticks: 0
+    interval: 150
+    repeat: true
+    onTriggered: {
+      // About 3.5s: the app library's 2s delay plus a slow summon.
+      if (++ticks > 24) { stop(); return }
+      if (!launchOsdStateProc.running) launchOsdStateProc.running = true
+    }
+  }
+
+  Process {
+    id: launchOsdStateProc
+    command: ["omarchy-shell", "osd", "state"]
+    stdout: StdioCollector { id: launchOsdStateOut; waitForEnd: true }
+    onExited: function(code) {
+      if (String(launchOsdStateOut.text || "").trim() !== "open") return
+      launchOsdWatch.stop()
+      Quickshell.execDetached(["omarchy-shell", "osd", "close"])
+    }
+  }
+
   IpcHandler {
     target: "lock"
 
@@ -4398,6 +4432,7 @@ echo "$out"
 
     function explore(): string {
       root.rescanUserDesigns()
+      root.watchLaunchOsd()
       if (root.shell && typeof root.shell.summon === "function")
         return root.shell.summon(root.pluginId, "{}") ? "ok" : "failed"
       return "no-shell"
