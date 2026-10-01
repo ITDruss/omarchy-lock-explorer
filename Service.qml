@@ -726,11 +726,17 @@ Item {
   // Keys Omarchy keeps on the entry for itself.
   readonly property var hostEntryKeys: ["id", "enabled"]
   property bool settingsRestoreChecked: false
+  // The copy is a few hundred bytes of settings; anything bigger is not it.
+  readonly property int settingsCopyMaxBytes: 65536
 
+  // Writes only. The file is the user's to edit or replace with anything, and
+  // a FileView loads whatever sits at its path: a FIFO would stall the shell
+  // and an oversized file would sit in its memory. Reads go through
+  // settingsCopyRead, which checks the file before handing it over.
   FileView {
     id: settingsBackup
     path: root.settingsBackupPath
-    blockLoading: true
+    preload: false
     atomicWrites: true
     printErrors: false
   }
@@ -745,10 +751,21 @@ Item {
     settingsBackup.setText(JSON.stringify(copy, null, 2) + "\n")
   }
 
-  function savedSettings() {
-    var saved = null
-    try { saved = JSON.parse(String(settingsBackup.text() || "")) } catch (e) { saved = null }
-    return saved && typeof saved === "object" && !Array.isArray(saved) ? saved : null
+  // Exit 0 with the file on stdout, 1 when there is nothing at the path,
+  // 2 when what is there is not a plain file (a symlink or FIFO included),
+  // 3 when it is over the cap. The cap bounds the read as well as the
+  // check, so a file growing in between still cannot get past it.
+  Process {
+    id: settingsCopyRead
+    command: ["bash", "-c",
+      "f=$1; max=$2; " +
+      "[ -e \"$f\" ] || [ -L \"$f\" ] || exit 1; " +
+      "[ -f \"$f\" ] && [ ! -L \"$f\" ] || exit 2; " +
+      "[ \"$(stat -c %s -- \"$f\")\" -le \"$max\" ] || exit 3; " +
+      "head -c \"$max\" -- \"$f\"",
+      "bash", root.settingsBackupPath, String(root.settingsCopyMaxBytes)]
+    stdout: StdioCollector { id: settingsCopyOut; waitForEnd: true }
+    onExited: function(exitCode) { root.applySettingsCopy(exitCode, String(settingsCopyOut.text || "")) }
   }
 
   function restoreSettings() {
@@ -756,14 +773,30 @@ Item {
     settingsRestoreChecked = true
     if (!shell || typeof shell.updateEntryInline !== "function") return
     var current = pluginEntry()
-    var saved = savedSettings()
     if (settingKeys(current).length > 0) {
-      // An install from before the copy existed gets one now.
-      if (!saved) saveSettingsBackup(current)
+      // The entry is the settings; the copy only has to match it. Writing it
+      // here, without reading it first, is also what gives an install from
+      // before the copy existed one.
+      saveSettingsBackup(current)
       return
     }
-    if (!saved || settingKeys(saved).length === 0) return
+    settingsCopyRead.running = true
+  }
+
+  function applySettingsCopy(exitCode, text) {
+    if (exitCode === 1) return
+    if (exitCode !== 0) {
+      logEvent("settings-copy-skipped: " + (exitCode === 2 ? "not a plain file" : "over " + settingsCopyMaxBytes + " bytes"))
+      return
+    }
+    var saved = null
+    try { saved = JSON.parse(text) } catch (e) { saved = null }
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return
     var keys = settingKeys(saved)
+    if (keys.length === 0) return
+    // A setting saved while the copy was being read is newer than the copy.
+    var current = pluginEntry()
+    if (settingKeys(current).length > 0) return
     keys.forEach(function(k) { current[k] = saved[k] })
     writeEntry(current)
     logEvent("settings-restored " + keys.join(","))
@@ -970,6 +1003,45 @@ Item {
       console.warn("lock-explorer: another copy of this plugin is installed under the same id and"
         + " may load instead of this one: " + found.join(", ")
         + ". Move it out of ~/.config/omarchy/plugins/ (a backup belongs anywhere else).")
+    }
+  }
+
+  // Another enabled plugin that also replaces omarchy.lock registers the same
+  // `lock` IPC target. Whichever loads first keeps it, so `omarchy-shell lock
+  // explore` answers "Function not found" and nothing in the shell says why
+  // (issue #41). Ask the shell which plugins are on and name the other one.
+  property var rivalLockPlugins: []
+  property bool rivalLockNotified: false
+
+  Timer {
+    id: rivalLockCheckTimer
+    // After the shell has settled; right after a reload it may still list the
+    // stock lock being swapped out.
+    interval: 5000
+    onTriggered: if (!rivalLockProc.running) rivalLockProc.running = true
+  }
+
+  Process {
+    id: rivalLockProc
+    command: ["omarchy-shell", "shell", "listPlugins"]
+    stdout: StdioCollector { id: rivalLockStdout; waitForEnd: true }
+    onExited: {
+      var plugins = []
+      try { plugins = JSON.parse(String(rivalLockStdout.text || "[]")) } catch (e) { return }
+      if (!Array.isArray(plugins)) return
+      var found = plugins.filter(function(p) {
+        return p && p.enabled === true && String(p.clonedFrom || "") === "omarchy.lock"
+          && String(p.id || "") !== root.pluginId
+      }).map(function(p) { return String(p.id) })
+      root.rivalLockPlugins = found
+      if (found.length === 0) return
+      root.logEvent("rival-lock " + found.join(" "))
+      console.warn("lock-explorer: another lock screen plugin is enabled and may own the `lock` IPC target: "
+        + found.join(", ") + ". Keep one: omarchy plugin disable " + found[0] + " && omarchy restart shell")
+      if (root.rivalLockNotified) return
+      root.rivalLockNotified = true
+      Quickshell.execDetached(["notify-send", "-a", "Lock Screen Explorer", found.join(", ") + " is also enabled",
+        "Two lock screen plugins are on. Keep one:\nomarchy plugin disable " + found[0] + "\nomarchy restart shell"])
     }
   }
 
@@ -3784,6 +3856,7 @@ echo "$out"
       readonly property bool allowPasswordToggle: root.allowPasswordToggle
       readonly property bool showAuthIcons: root.showAuthIcons
       readonly property var shadowingDirs: root.shadowingDirs
+      readonly property var rivalLockPlugins: root.rivalLockPlugins
       readonly property string doctorPath: root.doctorPath
       readonly property string wallpaperBlur: root.wallpaperBlur
       readonly property string wallpaperDim: root.wallpaperDim
@@ -3938,11 +4011,53 @@ echo "$out"
     detectAvatar()
     blankCrashCheckProc.running = true
     duplicatePluginProc.running = true
+    rivalLockCheckTimer.start()
     checkStrandedLock()
     settingsRestoreTimer.start()
   }
 
   Component.onDestruction: retireExplorerApi()
+
+  // Opened from the app launcher, the shell's app library shows a
+  // "Launching …" OSD 2s after the launch unless a new toplevel window appears
+  // by then. The explorer is layer-shell, so none does, and the OSD would
+  // otherwise stay up until the launcher's 15s timeout. The explorer's own
+  // close on open runs before the OSD exists, so watch for it for a few
+  // seconds after `explore` and close it 2s after it shows, long enough to
+  // read.
+  function watchLaunchOsd() {
+    launchOsdWatch.ticks = 0
+    launchOsdWatch.restart()
+  }
+
+  Timer {
+    id: launchOsdWatch
+    property int ticks: 0
+    interval: 150
+    repeat: true
+    onTriggered: {
+      // About 3.5s: the app library's 2s delay plus a slow summon.
+      if (++ticks > 24) { stop(); return }
+      if (!launchOsdStateProc.running) launchOsdStateProc.running = true
+    }
+  }
+
+  Process {
+    id: launchOsdStateProc
+    command: ["omarchy-shell", "osd", "state"]
+    stdout: StdioCollector { id: launchOsdStateOut; waitForEnd: true }
+    onExited: function(code) {
+      if (String(launchOsdStateOut.text || "").trim() !== "open") return
+      launchOsdWatch.stop()
+      launchOsdClose.restart()
+    }
+  }
+
+  Timer {
+    id: launchOsdClose
+    interval: 2000
+    onTriggered: Quickshell.execDetached(["omarchy-shell", "osd", "close"])
+  }
 
   IpcHandler {
     target: "lock"
@@ -3994,6 +4109,7 @@ echo "$out"
         capsLock: root.capsLock,
         fingerprintStatus: root.fingerprintStatus,
         shadowedBy: root.shadowingDirs,
+        rivalLockPlugins: root.rivalLockPlugins,
         wakeGraceMs: root.wakeInputGrace,
         faceStart: root.faceStart,
         powerActions: root.powerActions,
@@ -4398,6 +4514,7 @@ echo "$out"
 
     function explore(): string {
       root.rescanUserDesigns()
+      root.watchLaunchOsd()
       if (root.shell && typeof root.shell.summon === "function")
         return root.shell.summon(root.pluginId, "{}") ? "ok" : "failed"
       return "no-shell"
