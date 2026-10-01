@@ -3589,13 +3589,17 @@ echo "$out"
       root.fido2Installed = answer[0] === "yes"
       root.fido2TokenPresent = answer[1] === "present"
 
-      if (root.fido2FailurePending) {
-        root.fido2FailureChecked()
+      // Not configured any more wins over a pending failure: the round is
+      // moot, and the lock goes back to the password rather than waiting on
+      // a key it will not use.
+      if (!root.fido2Configured) {
+        root.fido2FailurePending = false
+        if (root.fido2Active) root.setAuthMode("password")
         return
       }
 
-      if (!root.fido2Configured) {
-        if (root.fido2Active) root.setAuthMode("password")
+      if (root.fido2FailurePending) {
+        root.fido2FailureChecked()
         return
       }
 
