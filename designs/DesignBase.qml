@@ -13,6 +13,9 @@ Item {
   property int avatarVersion: 0
   property bool fingerprintConfigured: false
   property bool faceConfigured: false
+  property bool faceRecognized: false
+  property bool faceAuthenticating: false
+  property bool motionReduced: false
   property bool fido2Configured: false
   property bool fido2Active: false
   // True only while pam_u2f has an assertion open. The field is inert then,

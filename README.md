@@ -88,7 +88,7 @@ the user — Greeting Card, Split, Dock, Poster, Sheet, Island and Profile — u
 to your initial when there is none.
 
 With a fingerprint reader enrolled the lock screen listens for it as soon as it comes up, and
-with face unlock set up (`pam_facelock`, the `omarchy-lock-face` PAM config with a model
+with face unlock set up (`pam_facelock` or Howdy’s `pam_howdy`, the `omarchy-lock-face` PAM config with a model
 enrolled) pressing Enter on an empty password field starts a face check, the same as the stock
 lock. The password field shows an icon for each one that is available.
 
@@ -103,6 +103,35 @@ lock. The password field shows an icon for each one that is available.
 Either way the camera is only used behind a lock screen that is actually on: when the display
 blanks the scan stops and the camera is released, and a result that arrives from a scan the
 blanking cut short is ignored. Enter and the face button work in every mode.
+
+### Howdy and face confirmation
+
+Howdy is detected when `/etc/pam.d/omarchy-lock-face` uses `pam_howdy.so`,
+Howdy is enabled in `/etc/howdy/config.ini`, and the current user has an enrolled
+model in `/etc/howdy/models/<username>.dat`. Install Howdy, configure its IR
+camera and enroll your face first. Configure only the dedicated lock service:
+
+```pam
+#%PAM-1.0
+auth required pam_howdy.so
+account include system-local-login
+```
+
+The plugin does not install drivers or change global PAM configuration. Its
+process needs read access to the configuration and enrolled model, plus access
+to the camera. Follow your distribution's Howdy setup for those permissions.
+
+For **Etch**, Settings → Sign-in and security → **Face confirmation** offers
+**Instant** (the existing default) or **Press a key**. The latter shows scanning
+and recognized states below the password field and waits for Enter or Space
+before unlocking. A held key's auto-repeat cannot confirm recognition in the password field. The face button also confirms a pending recognition.
+Confirmation expires after 15 seconds and is cleared on display blanking and
+on every new lock. Password, fingerprint and security-key authentication keep
+their existing behavior. Other designs keep instant face unlock.
+
+The same option can be set on the plugin entry as `"faceConfirm": true`, or with
+`omarchy-shell lock setFaceConfirm on`. `omarchy-shell lock faceConfirm` reports
+the setting. Camera timing (`faceStart`) is independent of confirmation.
 
 The field also shows the keyboard layout when it is not a US one — `DK`, `DE`, and so on,
 read from Hyprland and updated while the screen is locked, so a layout switched since you
