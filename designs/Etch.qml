@@ -7,6 +7,7 @@ import "Ttfx.js" as Ttfx
 // scatters the words and lets them fall back into line.
 DesignBase {
   id: lock
+  faceStatusProvided: true
   inputItem: field.input
   flashOnFail: false
 
@@ -55,66 +56,17 @@ DesignBase {
       showLockGlyph: false
       textAlignment: TextInput.AlignLeft
       color: lock.withAlpha(Color.lock.background, 0.5)
-
-
-
     }
   }
 
-  // Keep the hint outside the field so the original Etch layout stays put.
-  Item {
+  FaceStatus {
+    lock: lock
     x: etchLayout.x + field.x
     y: etchLayout.y + field.y + field.height + 12
     width: field.width
-    height: 46
-    visible: lock.faceConfigured && !lock.snapshotMode
-
-    Text {
-      id: faceMark
-      anchors.left: parent.left
-      anchors.leftMargin: 4
-      anchors.top: parent.top
-      text: lock.faceRecognized ? "✓" : "☺"
-      color: lock.faceRecognized ? Color.lock.borderActive : Color.lock.text
-      font.family: Style.font.family
-      font.pixelSize: 22
-      opacity: lock.faceRecognized ? 1 : 0.65
-      SequentialAnimation on opacity {
-        running: lock.faceAuthenticating && lock.screenAwake && !lock.snapshotMode && !lock.motionReduced
-        loops: Animation.Infinite
-        NumberAnimation { to: 0.35; duration: 650 }
-        NumberAnimation { to: 0.9; duration: 650 }
-        onRunningChanged: if (!running) faceMark.opacity = lock.faceRecognized ? 1 : 0.65
-      }
-    }
-
-    Column {
-      anchors.left: faceMark.right
-      anchors.leftMargin: 12
-      anchors.right: parent.right
-      spacing: 4
-      Text {
-        width: parent.width
-        text: lock.faceRecognized ? lock.tr("Face recognized")
-          : lock.faceAuthenticating ? lock.tr("Recognizing face…") : lock.tr("Face recognition")
-        color: lock.faceRecognized ? Color.lock.borderActive : Color.lock.text
-        font.family: Style.font.family
-        font.pixelSize: 13
-        opacity: lock.faceRecognized ? 1 : 0.8
-        elide: Text.ElideRight
-      }
-      Text {
-        width: parent.width
-        text: lock.faceRecognized ? lock.tr("Enter / Space to unlock")
-          : lock.faceAuthenticating ? lock.tr("Look at the camera") : lock.tr("Enter to scan your face")
-        color: Color.lock.text
-        font.family: Style.font.family
-        font.pixelSize: 11
-        opacity: 0.55
-        elide: Text.ElideRight
-      }
-    }
+    centered: false
   }
+
 
   Connections {
     target: lock

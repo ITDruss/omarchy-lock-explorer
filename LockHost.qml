@@ -76,6 +76,15 @@ Item {
   property size stillTextureSize: Qt.size(0, 0)
   property bool stillReady: false
 
+  // Covers every built-in field, custom inputs and the emergency field.
+  Shortcut {
+    sequences: ["Return", "Enter", "Space"]
+    context: Qt.WindowShortcut
+    autoRepeat: false
+    enabled: host.faceRecognized && host.inputEnabled && !host.inputBlocked && host.screenAwake
+    onActivated: host.faceRequested()
+  }
+
   signal submitPassword(string password)
   signal passwordTextEdited(string password)
   signal clearFailureRequested()
@@ -244,6 +253,8 @@ Item {
     target: host
     function onPasswordTextChanged() { host.regrab() }
     function onFailureMessageChanged() { host.regrab() }
+    function onFaceRecognizedChanged() { host.regrab() }
+    function onFaceAuthenticatingChanged() { host.regrab() }
     function onFailedAttemptsChanged() { host.regrab() }
     function onBatteryLowChanged() { host.regrab() }
     function onBatteryPercentChanged() { host.regrab() }

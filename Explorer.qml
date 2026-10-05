@@ -2180,9 +2180,9 @@ Item {
 
                 SettingRow {
                   explorer: root
-                  visible: root.faceConfigured && root.service && root.service.designId === "etch"
+                  visible: root.faceConfigured
                   label: root.tr("Face confirmation")
-                  help: root.tr("Etch waits for Enter or Space after recognizing your face. Confirmation expires after 15 seconds or when the screen blanks.")
+                  help: root.tr("Wait for Enter or Space after recognizing your face. Confirmation expires after 15 seconds or when the screen blanks.")
                   options: [{ id: "off", name: root.tr("Instant") }, { id: "on", name: root.tr("Press a key") }]
                   current: root.faceConfirm ? "on" : "off"
                   onPicked: function(id) { root.setFaceConfirm(id) }

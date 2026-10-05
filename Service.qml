@@ -2330,6 +2330,7 @@ echo "$out"
   property bool fingerprintAuthenticating: false
   property bool faceAuthenticating: false
   property bool faceRecognized: false
+  property double faceRecognizedAt: 0
   property int faceConfirmOverride: -1
   readonly property bool faceConfirm: {
     if (faceConfirmOverride >= 0) return faceConfirmOverride === 1
@@ -2339,8 +2340,7 @@ echo "$out"
     }
     return false
   }
-  // Etch currently provides the confirmation hint and keyboard interaction.
-  readonly property bool faceConfirmationEnabled: faceConfirm && designId === "etch"
+  readonly property bool faceConfirmationEnabled: faceConfirm
 
   function setFaceConfirm(value) {
     if (["on", "off"].indexOf(value) === -1) return false
@@ -2362,10 +2362,11 @@ echo "$out"
   }
 
   function requestFaceUnlock() {
-    if (faceRecognized && lockRequested && sessionLock.secure && !screenBlanked && !inputBlocked) {
+    if (faceRecognized && Date.now() - faceRecognizedAt < 15000 && lockRequested && sessionLock.secure && !screenBlanked && !inputBlocked) {
       finishUnlock()
       return
     }
+    if (faceRecognized) stopFace()
     retryFace()
   }
   // Face retries on its own after a miss, but not forever: a camera that
@@ -2377,6 +2378,7 @@ echo "$out"
   property bool passwordPamConfigured: false
   property bool fingerprintConfigured: false
   property bool faceConfigured: false
+  onFaceConfiguredChanged: if (!faceConfigured) stopFace()
   // Security-key unlock is a mode the user is in. It does not run alongside
   // the password: pam_u2f gets its own PAM service and its own context, since
   // sharing omarchy-lock-password would send every mistyped password to the
@@ -2699,6 +2701,7 @@ echo "$out"
     fido2FailurePending = false
     authenticatingPassword = false
     fingerprintAuthenticating = false
+    faceAuthenticating = false
     fingerprintRetryTimer.stop()
     clearFingerprintStatus()
     faceMisses = 0
@@ -2959,6 +2962,7 @@ echo "$out"
     if (result === PamResult.Success) {
       if (!faceConfirmationEnabled) { finishUnlock(); return }
       faceRetryTimer.stop()
+      faceRecognizedAt = Date.now()
       faceRecognized = true
       faceConfirmationExpiry.restart()
       logEvent("face-recognized awaiting-key")

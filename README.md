@@ -121,17 +121,31 @@ The plugin does not install drivers or change global PAM configuration. Its
 process needs read access to the configuration and enrolled model, plus access
 to the camera. Follow your distribution's Howdy setup for those permissions.
 
-For **Etch**, Settings → Sign-in and security → **Face confirmation** offers
+Settings → Sign-in and security → **Face confirmation** offers
 **Instant** (the existing default) or **Press a key**. The latter shows scanning
-and recognized states below the password field and waits for Enter or Space
+and recognized states beside each design’s input area and waits for Enter or Space
 before unlocking. A held key's auto-repeat cannot confirm recognition in the password field. The face button also confirms a pending recognition.
 Confirmation expires after 15 seconds and is cleared on display blanking and
 on every new lock. Password, fingerprint and security-key authentication keep
-their existing behavior. Other designs keep instant face unlock.
+their existing behavior. The setting applies to all built-in designs, including boxless inputs and companion screens.
 
 The same option can be set on the plugin entry as `"faceConfirm": true`, or with
 `omarchy-shell lock setFaceConfirm on`. `omarchy-shell lock faceConfirm` reports
 the setting. Camera timing (`faceStart`) is independent of confirmation.
+
+`FaceStatus.qml` is the shared, theme-aware indicator. Each built-in reserves
+space for it in its input layout; Dock places it above the bottom bar, Frame
+uses a compact caption row, and Etch keeps it below the field without moving
+the original layout. It is hidden in boot snapshots and during password errors,
+password authentication or FIDO2 mode. Reduce motion disables scanner pulsing
+and status changes update the captured still frame.
+
+Custom designs that inherit `DesignBase` receive a fallback status at the bottom.
+To place it yourself, set `faceStatusProvided: true` and add
+`FaceStatus { lock: lock; width: 360 }` in your layout. The shared component offers
+`centered`, `compact` and `pixelSize` properties. Host-level Enter/Space shortcuts
+also cover custom inputs and the emergency password field.
+
 
 The field also shows the keyboard layout when it is not a US one — `DK`, `DE`, and so on,
 read from Hyprland and updated while the screen is locked, so a layout switched since you
